@@ -1,0 +1,43 @@
+name: Profitability Guard
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * *' # Run daily to check against potentially new data (if we had auto-fetch)
+
+jobs:
+  profit-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v1
+      with:
+        version: "0.4.15"
+
+    - name: Set up Python
+      run: uv python install 3.11
+
+    - name: Install Dependencies
+      run: uv pip install -r requirements.txt
+
+    - name: Fetch 1m Data (Simulated / Artifact)
+      # In real CI, we might download this from artifacts or cloud storage to save API calls/Time
+      # For now, we fetch fresh (or fail if API key missing, so let's use mock/cached if possible)
+      # But our discovery test EXPECTS local CSV. 
+      # Let's try to fetch. If it fails, the test will skip/fail.
+      run: |
+        # We need a robust way to get data in CI. 
+        # Option A: Commit data (Bad practice for large files, but ok for 1MB csv)
+        # Option B: Download using Fetch script (needs internet/API access)
+        # Let's try B, assuming public access or just relying on what we have.
+        # Actually, since we don't have secrets in CI env by default here, 
+        # we rely on ccxt public endpoints which usually work without keys for OHLCV.
+        uv run python fetch_1m_data.py
+
+    - name: Run Strategy Discovery
+      run: uv run python -m unittest tests/test_strategy_discovery.py

@@ -1,11 +1,8 @@
 import unittest
 import logging
-import sys
-import os
-from datetime import datetime
 from backtest_engine import BacktestEngine
 from data_loader import DataLoader
-from optimize_strategy import run_optimization, load_config
+from optimize_strategy import run_optimization
 
 # Setup logger to stdout to see results during test
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -93,10 +90,10 @@ class TestProfitPotential(unittest.TestCase):
         logger.info(f"OPTIMIZED Profit: ${total_profit:.2f} (Trades: {metrics['total_trades']})")
         logger.info(f"Win Rate:        {metrics['win_rate']}%")
         logger.info(f"Max Drawdown:    {metrics['max_drawdown']}%")
-        logger.info(f"-------------------------------------------")
+        logger.info("-------------------------------------------")
         logger.info(f"PROJECTED MONTHLY PROFIT: ${projected_monthly_profit:.2f}")
         logger.info(f"PROJECTED MONTHLY ROI:    {projected_roi:.2f}%")
-        logger.info(f"-------------------------------------------")
+        logger.info("-------------------------------------------")
 
         # Assertions
         if metrics['total_trades'] == 0:

@@ -2,16 +2,16 @@ from fastapi import FastAPI, HTTPException, Body, Request, UploadFile, File, For
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
 import logging
 import os
 import json
-import re
 import asyncio
 import aiofiles
 from wallet_manager import WalletManager
-from profit_manager import ProfitManager
 from paper_trader import PaperTrader
+from backtest_engine import BacktestEngine
+from data_loader import DataLoader
+import pandas as pd
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -62,7 +62,8 @@ async def startup_event():
 
 async def start_bot_internal():
     global bot_task, trader
-    if bot_task: return
+    if bot_task:
+        return
     
     # Reload config into trader just in case
     trader.load_config(CONFIG_FILE)
@@ -118,11 +119,7 @@ def get_wallets_data():
         elif current_balance > reserve_ada:
             status_color = "orange"
             
-        is_hidden = current_balance >= target_ada # "Strati sa z overview" on payout?
-        # User said "nastala by hodnota payout strati sa z overview".
-        # So if green, it might be hidden or shown as "Payout Processing" then hidden.
-        # Let's keep it visible but mark it "Payout Ready" for now, unless specifically asked to hide.
-        # Actually user said "strati sa". Let's add a flag.
+        # is_hidden logic removed as it was unused
         
         enriched_wallets.append({
             "id": w[0],
@@ -144,7 +141,7 @@ def get_trades_data():
         if os.path.exists("bot_trade_log.txt"):
             with open("bot_trade_log.txt", "r") as f:
                 return f.readlines()[-20:]
-    except:
+    except Exception:
         pass
     return []
 
@@ -199,7 +196,8 @@ async def restore_wallet_endpoint(file: UploadFile = File(...), wallet_name: str
         os.remove(temp_filename)
         return {"status": "success", "wallet": result}
     except Exception as e:
-        if os.path.exists(temp_filename): os.remove(temp_filename)
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/wallet/backup/{wallet_name}")
@@ -249,9 +247,7 @@ async def optimize_bot():
 async def run_backtest_endpoint():
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
-    from backtest_engine import BacktestEngine
-    from data_loader import DataLoader
-
+    
     loop = asyncio.get_event_loop()
     
     def _run_backtest():
@@ -259,7 +255,8 @@ async def run_backtest_endpoint():
         loader = DataLoader(exchange_id='kraken', symbol='ADA/USDT', timeframe='15m')
         data = loader.fetch_data(limit=2000)
         
-        if not data: return None
+        if not data:
+            return None
         
         engine = BacktestEngine(initial_capital=1000.0)
         engine.load_data(data)
@@ -321,10 +318,7 @@ async def simulate_strategy(
     This powers the "Strategy Lab" UI.
     """
     from concurrent.futures import ThreadPoolExecutor
-    from backtest_engine import BacktestEngine
-    from data_loader import DataLoader
-    import pandas as pd
-
+    
     loop = asyncio.get_event_loop()
     
     def _run_sim():
@@ -369,6 +363,13 @@ async def simulate_strategy(
         
         engine.run()
         metrics = engine.get_metrics()
+        
+        # Get equity curve
+        curve = engine.equity_curve
+        # Downsample if needed
+        if len(curve) > 500:
+            step = len(curve) // 500
+            curve = curve[::step]
         
         # Prepare candle data for chart
         # Format: [{ time: timestamp, open: ..., high: ..., low: ..., close: ... }]

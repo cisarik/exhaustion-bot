@@ -195,7 +195,7 @@ class WalletManager:
         try:
             c.execute("SELECT id, wallet_name, address, network FROM wallets")
             rows = c.fetchall()
-        except:
+        except sqlite3.Error:
             rows = []
         conn.close()
         return rows
@@ -207,9 +207,9 @@ if __name__ == "__main__":
     logger.info("Generating new PyCardano wallet...")
     wallet = wm.generate_wallet("PyCardano Wallet")
     
-    print(f"\n--- New Wallet Generated ---")
+    print("\n--- New Wallet Generated ---")
     print(f"Name: {wallet['name']}")
     print(f"Network: {wallet['network']}")
     print(f"Mnemonic: {wallet['mnemonic']}")
     print(f"Address: {wallet['address']}")
-    print(f"----------------------------\n")
+    print("----------------------------\n")

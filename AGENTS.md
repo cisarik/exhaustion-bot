@@ -60,16 +60,27 @@ Obsahuje presné inštrukcie, ako začať projekt alebo ako v ňom plynule pokra
 ### 2. Profit Mathematics (Overená Stratégia)
 Na základe Matrix Search a TDD (November 2025):
 *   **Timeframe:** 1m (HFT Dip Hunting).
-*   **Logika:** Extrémne vyčerpanie (L3=20) + RSI Oversold (<30).
-*   **Risk:** Wide Stops (SL 2.5%) pre prežitie volatility, Big TP (5%).
-*   **Exekúcia:** Limit Orders (predpokladaný 0.1% fee/slippage).
-*   **Výsledok:** Winrate 50%, Profit Factor > 1.5.
+*   **Stratégia:** EMA 200 Trend Filter + L3 Exhaustion + Fib 0.5 Exit.
+*   **Logika:** Kúpiť len keď cena > EMA 200 a nastane L3 Dip (Pullback).
+*   **Exit:** Dynamický Fibonacci Retracement (0.5).
+*   **Výsledok:** Profit $1.03 (na 10k sviečkach), 11 obchodov, stabilnejšie ako čistý counter-trend.
 
 ### 3. Tooling & Commands
 *   **Spustenie Bota:** `sudo systemctl start cardano-bot`
 *   **Spustenie Dashboardu:** `./start_dashboard.sh` (používa `uv`)
 *   **Run Tests:** `uv run python -m unittest discover tests`
 *   **Profit Matrix:** `uv run python profit_matrix_tool.py`
+*   **PyneCore Strategy Dev:** `uv run -p .venv311/bin/python strategy_pynecore.py` (viď `PYNECORE.md`)
+
+---
+
+## 🧬 AI Strategy Generation (The Future)
+Našli sme cestu k nekonečnej studnici stratégií cez **PyneCore**.
+*   **Knowledge Base:** Prečítaj `PYNECORE.md` pre detaily.
+*   **Workflow:**
+    1.  Nájdi Pine Script stratégiu na TradingView.
+    2.  Použi "Transpiler Prompt" z `PYNECORE.md` na konverziu do Pythonu.
+    3.  Otestuj v `.venv311` prostredí.
 
 ---
 
@@ -78,8 +89,8 @@ Na základe Matrix Search a TDD (November 2025):
 
 *   **[2025-11-25] Init:** Vytvorené `PRD.md` a `AGENTS.md`.
 *   **[2025-11-26] HFT & UV Migration:**
-    *   Migrácia celého projektu na **`uv`**.
-    *   Implementácia `Strategy Lab` (UI pre backtesty).
-    *   Nájdená zisková stratégia **"Dip Hunting"** (1m, L3=20, RSI).
-    *   Vytvorený `tests/test_profitable_config.py` ako garancia ziskovosti.
-    *   Bot beží na `deltadefi` Websocket feede.
+    *   Migrácia na **`uv`**.
+    *   Implementácia `Strategy Lab`.
+    *   **Nový "Holy Grail":** Trend + Pullback (EMA 200 + L3 + Fib 0.5).
+    *   **PyneCore Foundation:** Vytvorený `PYNECORE.md` a prostredie `.venv311` pre budúci vývoj stratégií v štýle Pine Script.
+    *   Bot beží na `paper_trader.py` s aktualizovanou logikou.

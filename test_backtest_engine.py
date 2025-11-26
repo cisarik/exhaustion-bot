@@ -1,6 +1,5 @@
 import unittest
 from backtest_engine import BacktestEngine
-from exhaustion_detector import ExhaustionDetector
 
 class TestBacktestEngine(unittest.TestCase):
     def setUp(self):

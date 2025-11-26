@@ -12,7 +12,6 @@ class TestExhaustionLogicStrict(unittest.TestCase):
         # Construct a sequence
         # We need enough history to start. 4 candles.
         # [100, 100, 100, 100]
-        history = [100.0, 100.0, 100.0, 100.0]
         
         # We need 9 candles where close < close[4].
         # Candle 1 (Index 4): close < history[0] (100). Let's use 90.

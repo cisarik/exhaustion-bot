@@ -1,12 +1,8 @@
 import optuna
 import logging
 from backtest_engine import BacktestEngine
-import optuna
-import logging
 import json
 import os
-from backtest_engine import BacktestEngine
-from exhaustion_detector import ExhaustionDetector
 from data_loader import DataLoader
 
 # Configure logging
@@ -116,8 +112,10 @@ def run_optimization(n_trials=20, input_data=None):
     current_config = load_config()
     
     # Ensure sections exist
-    if "strategy" not in current_config: current_config["strategy"] = {}
-    if "risk" not in current_config: current_config["risk"] = {}
+    if "strategy" not in current_config:
+        current_config["strategy"] = {}
+    if "risk" not in current_config:
+        current_config["risk"] = {}
     
     # Update Strategy
     current_config["strategy"]["level1"] = study.best_params["level1"]
@@ -137,4 +135,3 @@ def run_optimization(n_trials=20, input_data=None):
 
 if __name__ == "__main__":
     run_optimization(n_trials=20)
-

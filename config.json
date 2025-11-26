@@ -1,22 +1,33 @@
 {
     "strategy": {
         "level1": 9,
-        "level2": 10,
-        "level3": 12,
-        "lookback1": 4,
-        "lookback2": 2,
-        "lookback3": 5
+        "level2": 14,
+        "level3": 20,
+        "lookback1": 6,
+        "lookback2": 6,
+        "lookback3": 6,
+        "use_rsi_filter": true,
+        "rsi_period": 14,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70,
+        "use_fib_exit": true,
+        "fib_level": 0.5
     },
     "risk": {
-        "stop_loss_pct": 0.011304573017506262,
-        "take_profit_pct": 0.07637625781551022,
+        "stop_loss_pct": 0.025,
+        "take_profit_pct": 0.10,
         "risk_per_trade": 0.02,
         "max_trade_size_usdc": 500.0
     },
     "system": {
         "paper_mode": true,
-        "exchange": "kraken",
+        "exchange": "deltadefi",
         "symbol": "ADA/USDC",
-        "timeframe": "15m"
+        "status": "STOPPED"
+    },
+    "profit": {
+        "target_ada": 100.0,
+        "reserve_ada": 10.0,
+        "withdraw_address": ""
     }
 }

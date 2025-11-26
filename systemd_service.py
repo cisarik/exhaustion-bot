@@ -1,9 +1,7 @@
 import os
-import sys
 
 def generate_service_file():
     cwd = os.getcwd()
-    python_exec = sys.executable
     user = os.getenv('USER', 'pi')
     
     # Robust service configuration for production
@@ -46,7 +44,7 @@ WantedBy=multi-user.target
     
     print(f"Generated 'cardano-bot.service' in {cwd}")
     print("To install:")
-    print(f"sudo cp cardano-bot.service /etc/systemd/system/")
+    print("sudo cp cardano-bot.service /etc/systemd/system/")
     print("sudo systemctl daemon-reload")
     print("sudo systemctl enable cardano-bot")
     print("sudo systemctl start cardano-bot")

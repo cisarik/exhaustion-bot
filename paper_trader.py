@@ -1,12 +1,11 @@
 import asyncio
 import logging
-import random
 import os
 import json
 from datetime import datetime
 from typing import List, Dict
 import ccxt.async_support as ccxt
-from blockfrost import BlockFrostApi, ApiError
+from blockfrost import BlockFrostApi
 from delta_defi_client import DeltaDefiClient
 from exhaustion_detector import ExhaustionDetector
 from wallet_manager import WalletManager
@@ -66,6 +65,19 @@ class PaperTrader:
         self.exchange_id = self.config['system'].get('exchange', 'kraken')
         self.symbol = self.config['system'].get('symbol', 'ADA/USD') # Kraken uses ADA/USD
         
+        # Advanced Strategy Settings
+        strategy_cfg = self.config.get('strategy', {})
+        self.use_rsi_filter = strategy_cfg.get('use_rsi_filter', False)
+        self.rsi_period = strategy_cfg.get('rsi_period', 14)
+        self.rsi_oversold = strategy_cfg.get('rsi_oversold', 30)
+        self.rsi_overbought = strategy_cfg.get('rsi_overbought', 70)
+        
+        self.use_fib_exit = strategy_cfg.get('use_fib_exit', False)
+        self.fib_level = strategy_cfg.get('fib_level', 0.5)
+        
+        self.use_trend_filter = strategy_cfg.get('use_trend_filter', False)
+        self.ema_period = strategy_cfg.get('ema_period', 200)
+        
         # BlockFrost Init
         self.bf_project_id = os.getenv('BLOCKFROST_PROJECT_ID')
         if self.bf_project_id:
@@ -97,6 +109,13 @@ class PaperTrader:
             self.risk_per_trade = self.config.get('risk', {}).get('risk_per_trade', 0.02)
             self.stop_loss_pct = self.config.get('risk', {}).get('stop_loss_pct', 0.012)
             self.take_profit_pct = self.config.get('risk', {}).get('take_profit_pct', 0.03)
+            
+            # Reload Strategy Params
+            strategy_cfg = self.config.get('strategy', {})
+            self.use_rsi_filter = strategy_cfg.get('use_rsi_filter', False)
+            self.use_fib_exit = strategy_cfg.get('use_fib_exit', False)
+            self.fib_level = strategy_cfg.get('fib_level', 0.5)
+            self.use_trend_filter = strategy_cfg.get('use_trend_filter', False)
 
     async def start(self):
         logger.info(f"Starting Paper Trader. Mode: {'PAPER' if self.paper_mode else 'LIVE'}")
@@ -225,12 +244,36 @@ class PaperTrader:
         finally:
             await exchange.close() 
 
+    def calculate_rsi(self, period=14):
+        import pandas as pd
+        if not self.closes: return []
+        series = pd.Series(self.closes)
+        delta = series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        return (100 - (100 / (1 + rs))).fillna(50).tolist()
+
+    def calculate_ema(self, period=200):
+        import pandas as pd
+        if not self.closes: return []
+        return pd.Series(self.closes).ewm(span=period, adjust=False).mean().tolist()
+
+    def get_fib_levels(self, window: List[float]):
+        if not window: return None
+        swing_high = max(window)
+        swing_low = min(window)
+        diff = swing_high - swing_low
+        return {
+            'low': swing_low,
+            'high': swing_high,
+            'range': diff
+        }
+
     def process_candle(self, close_price: float, is_warmup: bool = False):
         self.closes.append(close_price)
-        # Max lookback needed is around 20-30 for detector state? 
-        # No, detector is stateful but detect_signal re-runs history.
-        # Keep enough history for re-run.
-        if len(self.closes) > 100:
+        # Keep enough history for EMA 200
+        if len(self.closes) > 300:
             self.closes.pop(0)
             
         # Run Detection
@@ -239,12 +282,31 @@ class PaperTrader:
         if is_warmup:
             return
 
-        if signal['bull_l3']:
+        # --- FILTERS ---
+        can_long = True
+        can_short = True # Though we mainly long dips
+        
+        # 1. RSI Filter
+        if self.use_rsi_filter and len(self.closes) > self.rsi_period:
+            rsi_vals = self.calculate_rsi(self.rsi_period)
+            current_rsi = rsi_vals[-1]
+            if current_rsi > self.rsi_oversold:
+                can_long = False
+            if current_rsi < self.rsi_overbought:
+                can_short = False
+                
+        # 2. Trend Filter (EMA)
+        if self.use_trend_filter and len(self.closes) > self.ema_period:
+            ema_vals = self.calculate_ema(self.ema_period)
+            current_ema = ema_vals[-1]
+            if close_price < current_ema:
+                can_long = False # Don't buy dips in downtrend
+            if close_price > current_ema:
+                can_short = False
+
+        if signal['bull_l3'] and can_long:
             self.execute_trade('BUY', close_price, signal)
-        elif signal['bear_l3']:
-            # Logic for Bear L3: Close Longs or Open Short?
-            # Original prompt: "Level 3 exhaustion signals" -> reversal.
-            # Bull L3 -> Buy. Bear L3 -> Sell.
+        elif signal['bear_l3'] and can_short:
             self.execute_trade('SELL', close_price, signal)
 
     def execute_trade(self, side: str, price: float, signal_data: Dict):
@@ -281,6 +343,21 @@ class PaperTrader:
                 'status': 'OPEN',
                 'entry_time': datetime.now().isoformat()
             }
+            
+            # Calculate Fib Target if enabled
+            if self.use_fib_exit:
+                 # Look back 50 bars
+                 lookback = 50
+                 if len(self.closes) >= lookback:
+                     window = self.closes[-lookback:]
+                     fibs = self.get_fib_levels(window)
+                     if fibs:
+                         # Target = Low + Range * Level
+                         target_price = fibs['low'] + (fibs['range'] * self.fib_level)
+                         if target_price > effective_price:
+                             position['fib_target'] = target_price
+                             logger.info(f"Fib Target Set: {target_price:.4f} (Level {self.fib_level})")
+            
             self.positions.append(position)
             logger.info(f">>> OPEN LONG | Price: {effective_price:.4f} | Amt: {ada_amount:.2f} ADA | SL: {position['sl_price']:.4f} | TP: {position['tp_price']:.4f}")
             
@@ -299,6 +376,8 @@ class PaperTrader:
                 self.close_position(pos, current_price, 'SL')
             elif current_price >= pos['tp_price']:
                 self.close_position(pos, current_price, 'TP')
+            elif self.use_fib_exit and pos.get('fib_target') and current_price >= pos['fib_target']:
+                self.close_position(pos, current_price, 'FIB_TP')
 
     def close_position(self, pos: Dict, current_price: float, reason: str):
         effective_price = current_price * (1 - self.slippage_pct)
