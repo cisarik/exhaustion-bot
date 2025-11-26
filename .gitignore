@@ -1,0 +1,26 @@
+# Python / Environment
+__pycache__/
+*.pyc
+venv/
+.env
+.DS_Store
+
+# Data & Logs
+bot_trade_log.txt
+data/
+*.db
+*.sqlite
+
+# Secrets (CRITICAL)
+*.key
+agent_x_private_seed.key
+wallet_*.png
+
+# IDE
+.vscode/
+.idea/
+
+# Dynamic Config (Optional - keep config.json if it's template, ignore if it contains secrets)
+# We will keep config.json as default strategy template, but ignore backups
+backup_*.key
+temp_restore_*

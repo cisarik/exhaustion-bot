@@ -1,0 +1,15 @@
+[Unit]
+Description=Cardano DeFi HFT Exhaustion Bot
+After=network.target
+
+[Service]
+User=agile
+WorkingDirectory=/home/agile/exhaustion-bot
+ExecStart=/home/agile/exhaustion-bot/venv/bin/python3 /home/agile/exhaustion-bot/paper_trader.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/agile/exhaustion-bot/bot_service.log
+StandardError=append:/home/agile/exhaustion-bot/bot_service_error.log
+
+[Install]
+WantedBy=multi-user.target

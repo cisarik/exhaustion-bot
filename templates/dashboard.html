@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardano HFT Bot | Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Glassmorphism */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .glass-panel {
+            background: rgba(17, 25, 40, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.125);
+            border-radius: 1rem;
+        }
+        body {
+            background: radial-gradient(circle at top left, #1a202c, #000000);
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+        }
+        .qr-container {
+            position: relative;
+            padding: 4px;
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+        }
+        .qr-green { border: 4px solid #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.5); }
+        .qr-orange { border: 4px solid #f59e0b; box-shadow: 0 0 15px rgba(245, 158, 11, 0.5); }
+        .qr-red { border: 4px solid #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
+        
+        /* Scanline animation for Cyberpunk feel */
+        .scanline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.05) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body class="antialiased relative overflow-x-hidden">
+    <div class="scanline"></div>
+
+    <!-- Navbar -->
+    <nav class="glass sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="w-3 h-3 rounded-full {{ 'bg-green-500 animate-pulse' if bot_status == 'RUNNING' else 'bg-red-500' }}"></div>
+            <h1 class="text-xl font-bold tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                EXHAUSTION BOT <span class="text-xs text-gray-400 font-mono">v1.0</span>
+            </h1>
+        </div>
+        <div class="flex gap-4">
+            <button onclick="updateBot('start')" class="px-4 py-1.5 rounded bg-green-500/20 hover:bg-green-500/40 border border-green-500/50 transition">START</button>
+            <button onclick="updateBot('stop')" class="px-4 py-1.5 rounded bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 transition">STOP</button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+        
+        <!-- Stats Column -->
+        <div class="lg:col-span-1 space-y-6">
+            <!-- Profit Card -->
+            <div class="glass-panel p-6">
+                <h2 class="text-gray-400 text-sm uppercase tracking-widest mb-4">Performance</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-xs text-gray-500">USDC Balance</div>
+                        <div class="text-2xl font-mono text-blue-400">${{ profit.usdc }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500">ADA Balance</div>
+                        <div class="text-2xl font-mono text-yellow-400">₳{{ profit.ada }}</div>
+                    </div>
+                </div>
+                <div class="mt-4 text-xs text-gray-500">Target: ₳{{ config.profit.target_ada }} (Auto-Withdraw)</div>
+            </div>
+
+            <!-- Config Card -->
+            <div class="glass-panel p-6 relative">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-gray-400 text-sm uppercase tracking-widest">Strategy Config</h2>
+                    <button onclick="runOptimization()" id="optBtn" class="text-xs px-2 py-1 rounded border border-purple-500/50 text-purple-300 hover:bg-purple-500/20 transition flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        VYLEPŠI (AI)
+                    </button>
+                </div>
+                <form id="configForm" class="space-y-3 text-sm">
+                    <div class="grid grid-cols-3 gap-2">
+                        <label>L1: <input type="number" name="strategy.level1" value="{{ config.strategy.level1 }}" class="w-full bg-black/30 border border-gray-700 rounded px-2 py-1 text-center"></label>
+                        <label>L2: <input type="number" name="strategy.level2" value="{{ config.strategy.level2 }}" class="w-full bg-black/30 border border-gray-700 rounded px-2 py-1 text-center"></label>
+                        <label>L3: <input type="number" name="strategy.level3" value="{{ config.strategy.level3 }}" class="w-full bg-black/30 border border-gray-700 rounded px-2 py-1 text-center"></label>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <label>TP %: <input type="number" step="0.001" name="risk.take_profit_pct" value="{{ config.risk.take_profit_pct }}" class="w-full bg-black/30 border border-gray-700 rounded px-2 py-1"></label>
+                        <label>SL %: <input type="number" step="0.001" name="risk.stop_loss_pct" value="{{ config.risk.stop_loss_pct }}" class="w-full bg-black/30 border border-gray-700 rounded px-2 py-1"></label>
+                    </div>
+                    <button type="button" onclick="saveConfig()" class="w-full mt-4 py-2 rounded bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 text-blue-200 transition">Update Strategy</button>
+                </form>
+                
+                <!-- Loading Overlay -->
+                <div id="optLoading" class="hidden absolute inset-0 bg-black/80 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center text-center p-4 z-10">
+                    <div class="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                    <div class="text-purple-300 font-bold">Optimalizujem...</div>
+                    <div class="text-xs text-gray-400 mt-1">Hľadám najlepšie parametre (Genetic Algo)</div>
+                </div>
+            </div>
+            
+            <!-- Validation / Backtest Card -->
+            <div class="glass-panel p-6 mt-6">
+                 <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-gray-400 text-sm uppercase tracking-widest">Backtest Config</h2>
+                    <button onclick="runBacktest()" id="btBtn" class="text-xs px-2 py-1 rounded border border-blue-500/50 text-blue-300 hover:bg-blue-500/20 transition flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        OVERIŤ
+                    </button>
+                </div>
+                <div id="backtestResults" class="hidden space-y-3">
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="bg-black/30 p-2 rounded">
+                            <div class="text-gray-500">Total Profit</div>
+                            <div class="text-green-400 font-mono" id="btProfit">--</div>
+                        </div>
+                         <div class="bg-black/30 p-2 rounded">
+                            <div class="text-gray-500">Max Drawdown</div>
+                            <div class="text-red-400 font-mono" id="btDrawdown">--</div>
+                        </div>
+                         <div class="bg-black/30 p-2 rounded">
+                            <div class="text-gray-500">Win Rate</div>
+                            <div class="text-blue-400 font-mono" id="btWinRate">--</div>
+                        </div>
+                         <div class="bg-black/30 p-2 rounded">
+                            <div class="text-gray-500">Profit Factor</div>
+                            <div class="text-yellow-400 font-mono" id="btPF">--</div>
+                        </div>
+                    </div>
+                    <div class="h-32 w-full">
+                        <canvas id="equityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wallets Column -->
+        <div class="lg:col-span-1 space-y-6">
+             <h2 class="text-gray-400 text-sm uppercase tracking-widest">Active Wallets</h2>
+             
+             {% for wallet in wallets %}
+             <div class="glass-panel p-6 flex flex-col items-center text-center">
+                <div class="flex justify-between w-full mb-4">
+                    <span class="text-sm font-bold">{{ wallet.name }}</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-700/50">{{ wallet.address[:10] }}...</span>
+                </div>
+
+                <div class="qr-container qr-{{ wallet.color }} mb-4 relative group">
+                    <img src="/qr/{{ wallet.name }}" alt="Wallet QR" class="w-48 h-48 rounded">
+                    
+                    {% if wallet.color == 'green' %}
+                    <div class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-green-400 font-bold animate-pulse">
+                        <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        PAYOUT READY
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="w-full space-y-2">
+                    <div class="flex justify-between text-xs">
+                        <span>Progress</span>
+                        <span>{{ wallet.progress }}%</span>
+                    </div>
+                    <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-blue-500 to-purple-500" style="width: {{ wallet.progress }}%"></div>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-2">Balance: ₳{{ wallet.balance }}</div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2 w-full mt-4">
+                    <form action="/wallet/backup/{{ wallet.name }}" method="post" target="_blank">
+                         <button class="w-full text-xs py-1.5 rounded border border-gray-600 hover:bg-gray-700">Backup Key</button>
+                    </form>
+                    <!-- Restore button placeholder -->
+                </div>
+             </div>
+             {% endfor %}
+             
+             {% if not wallets %}
+             <div class="glass-panel p-6 text-center text-gray-500">
+                 No Wallets Configured. Run setup.
+             </div>
+             {% endif %}
+        </div>
+
+        <!-- Trades Column -->
+        <div class="lg:col-span-1">
+            <div class="glass-panel h-full p-0 overflow-hidden flex flex-col">
+                <div class="p-4 border-b border-gray-700 bg-black/20">
+                    <h2 class="text-gray-400 text-sm uppercase tracking-widest">Live Trade Log</h2>
+                </div>
+                <div class="p-4 overflow-y-auto font-mono text-xs space-y-2 h-[600px] bg-black/10" id="tradeLog">
+                    {% for line in trades %}
+                    <div class="border-l-2 pl-2 {{ 'border-green-500 text-green-300' if 'BUY' in line or 'OPEN' in line else 'border-red-500 text-red-300' if 'SELL' in line or 'CLOSE' in line else 'border-gray-600 text-gray-400' }}">
+                        {{ line }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        async function updateBot(action) {
+            const res = await fetch(`/bot/${action}`, { method: 'POST' });
+            const data = await res.json();
+            if(data.status) location.reload();
+        }
+
+        async function saveConfig() {
+            const formData = new FormData(document.getElementById('configForm'));
+            // Convert FormData to JSON object structure (nested)
+            // Quick hack for simple nesting: name="strategy.level1"
+            const config = {};
+            
+            for (let [key, value] of formData.entries()) {
+                if(key.includes('.')) {
+                    const [section, field] = key.split('.');
+                    if(!config[section]) config[section] = {};
+                    config[section][field] = Number(value);
+                } else {
+                    config[key] = value;
+                }
+            }
+            
+            await fetch('/config/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            alert('Config Updated!');
+            location.reload();
+        }
+        
+        async function runOptimization() {
+            if(!confirm("Spustiť genetickú optimalizáciu? Môže to trvať niekoľko sekúnd.")) return;
+            
+            document.getElementById('optLoading').classList.remove('hidden');
+            document.getElementById('optBtn').disabled = true;
+            
+            try {
+                const res = await fetch('/bot/optimize', { method: 'POST' });
+                const data = await res.json();
+                
+                if(data.status === 'success') {
+                    alert(`Optimalizácia dokončená! Best Profit: Prijaté nové parametre.`);
+                    location.reload();
+                } else {
+                    alert('Chyba optimalizácie: ' + data.detail);
+                }
+            } catch (e) {
+                alert('Chyba: ' + e);
+            } finally {
+                document.getElementById('optLoading').classList.add('hidden');
+                document.getElementById('optBtn').disabled = false;
+            }
+        }
+        
+        async function runBacktest() {
+            const btn = document.getElementById('btBtn');
+            btn.disabled = true;
+            btn.innerHTML = '...';
+            
+            try {
+                const res = await fetch('/bot/backtest');
+                const data = await res.json();
+                
+                if(data.status === 'success') {
+                    const r = data.result;
+                    document.getElementById('backtestResults').classList.remove('hidden');
+                    
+                    document.getElementById('btProfit').textContent = '$' + r.total_pnl;
+                    document.getElementById('btDrawdown').textContent = r.max_drawdown + '%';
+                    document.getElementById('btWinRate').textContent = r.win_rate + '%';
+                    document.getElementById('btPF').textContent = r.profit_factor;
+                    
+                    renderChart(r.equity_curve);
+                } else {
+                    alert('Backtest failed: ' + data.detail);
+                }
+            } catch (e) {
+                alert('Error: ' + e);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg> OVERIŤ`;
+            }
+        }
+        
+        let chartInstance = null;
+        function renderChart(dataPoints) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            
+            if (chartInstance) chartInstance.destroy();
+            
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dataPoints.map((_, i) => i),
+                    datasets: [{
+                        label: 'Equity',
+                        data: dataPoints,
+                        borderColor: '#3b82f6',
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            display: true,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: '#64748b', font: { size: 9 } }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Auto-refresh log (simple polling)
+        setInterval(async () => {
+            const res = await fetch('/trades');
+            const data = await res.json();
+            const logDiv = document.getElementById('tradeLog');
+            logDiv.innerHTML = data.recent_trades.map(line => {
+                let colorClass = 'border-gray-600 text-gray-400';
+                if(line.includes('BUY') || line.includes('OPEN')) colorClass = 'border-green-500 text-green-300';
+                else if(line.includes('SELL') || line.includes('CLOSE')) colorClass = 'border-red-500 text-red-300';
+                
+                return `<div class="border-l-2 pl-2 ${colorClass}">${line}</div>`;
+            }).join('');
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }, 2000);
+    </script>
+</body>
+</html>

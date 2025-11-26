@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardano Exhaustion Bot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/glass.css">
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Sidebar: Controls & Config -->
+        <div class="sidebar">
+            <div class="glass-card">
+                <h1>Cardano Bot 🚀</h1>
+                <div id="status-display" class="status-badge status-stopped">STOPPED</div>
+                <div style="margin-top: 20px; display: flex; gap: 10px;">
+                    <button onclick="startBot()">Start</button>
+                    <button class="danger" onclick="stopBot()">Stop</button>
+                </div>
+            </div>
+
+            <div class="glass-card">
+                <h3>Strategy Config</h3>
+                <form id="strategy-form" onsubmit="updateStrategy(event)">
+                    <div class="form-group">
+                        <label>Level 1 (Count)</label>
+                        <input type="number" id="level1" value="9">
+                    </div>
+                    <div class="form-group">
+                        <label>Level 2 (Count)</label>
+                        <input type="number" id="level2" value="12">
+                    </div>
+                    <div class="form-group">
+                        <label>Level 3 (Count)</label>
+                        <input type="number" id="level3" value="14">
+                    </div>
+                    <button type="submit">Update Strategy</button>
+                </form>
+            </div>
+
+            <div class="glass-card">
+                <h3>Risk Management</h3>
+                <form id="risk-form" onsubmit="updateRisk(event)">
+                    <div class="form-group">
+                        <label>Stop Loss %</label>
+                        <input type="number" step="0.001" id="sl" value="0.012">
+                    </div>
+                    <div class="form-group">
+                        <label>Take Profit %</label>
+                        <input type="number" step="0.001" id="tp" value="0.03">
+                    </div>
+                    <button type="submit">Update Risk</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Content: Charts & Stats -->
+        <div class="main-content">
+            <!-- Chart -->
+            <div class="glass-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2>ADA/USDC 15m</h2>
+                    <div class="status-badge" style="background: rgba(0, 51, 173, 0.2); color: #8ab4f8;">Live Feed</div>
+                </div>
+                <div id="chart-container"></div>
+            </div>
+
+            <!-- Profit & Wallets -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="glass-card">
+                    <h3>Profit Manager 💰</h3>
+                    <div style="font-size: 2rem; font-weight: 600; color: var(--success); margin: 10px 0;">
+                        $<span id="total-pnl">0.00</span>
+                    </div>
+                    <form id="profit-form" onsubmit="updateProfit(event)">
+                        <div class="form-group">
+                            <label>Auto-Withdraw Target (ADA)</label>
+                            <input type="number" id="target-ada" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Withdraw Address</label>
+                            <input type="text" id="withdraw-addr" placeholder="addr1...">
+                        </div>
+                        <button type="submit">Save Settings</button>
+                    </form>
+                </div>
+
+                <div class="glass-card">
+                    <h3>Wallets 💳</h3>
+                    <div id="wallet-list">
+                        <!-- Wallets injected here -->
+                        <div class="wallet-item">Loading...</div>
+                    </div>
+                    <button style="margin-top: 10px;" onclick="generateWallet()">Generate New Wallet</button>
+
+                    <h4 style="margin-top: 20px; border-top: 1px solid var(--glass-border); padding-top: 10px;">Restore
+                        Wallet</h4>
+                    <form id="restore-form" onsubmit="restoreWallet(event)">
+                        <div class="form-group">
+                            <input type="text" id="restore-name" placeholder="New Wallet Name" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="file" id="restore-file" required style="color: var(--text-secondary);">
+                        </div>
+                        <button type="submit" style="background: var(--text-secondary);">Restore from Backup</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>
