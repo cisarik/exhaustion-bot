@@ -42,10 +42,17 @@ class DataLoader:
         logger.info(f"Fetching approx {limit} candles for {self.symbol} from {self.exchange_id}...")
         try:
             all_ohlcv = []
-            # Calculate start time: limit * timeframe_in_ms
-            timeframe_ms = 15 * 60 * 1000 
+            # Calculate start time based on timeframe
+            # Parse timeframe string to ms
+            if self.timeframe.endswith('m'):
+                timeframe_ms = int(self.timeframe[:-1]) * 60 * 1000
+            elif self.timeframe.endswith('h'):
+                timeframe_ms = int(self.timeframe[:-1]) * 60 * 60 * 1000
+            else:
+                timeframe_ms = 15 * 60 * 1000 # Fallback
+                
             # Ensure we go back enough time. Add extra buffer.
-            duration_ms = (limit + 100) * timeframe_ms
+            duration_ms = (limit + 500) * timeframe_ms
             start_timestamp = self.exchange.milliseconds() - duration_ms
             
             target_candles = limit
@@ -54,7 +61,7 @@ class DataLoader:
                 # Use 'since' parameter to fetch sequentially
                 current_since = start_timestamp + (len(all_ohlcv) * timeframe_ms)
                 
-                ohlcv = self.exchange.fetch_ohlcv(self.symbol, self.timeframe, since=current_since, limit=720) # Kraken usually limits to 720
+                ohlcv = self.exchange.fetch_ohlcv(self.symbol, self.timeframe, since=current_since, limit=1000)
                 if not ohlcv:
                     break
                 
@@ -65,7 +72,7 @@ class DataLoader:
                     
                 # Small delay to be nice to API
                 import time
-                time.sleep(0.2)
+                time.sleep(0.1)
             
             # Sort and Deduplicate
             df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])

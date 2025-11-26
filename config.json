@@ -1,15 +1,15 @@
 {
     "strategy": {
-        "level1": 3,
+        "level1": 9,
         "level2": 10,
-        "level3": 15,
-        "lookback1": 6,
-        "lookback2": 4,
-        "lookback3": 7
+        "level3": 12,
+        "lookback1": 4,
+        "lookback2": 2,
+        "lookback3": 5
     },
     "risk": {
-        "stop_loss_pct": 0.011626548336490607,
-        "take_profit_pct": 0.038319187219306564,
+        "stop_loss_pct": 0.011304573017506262,
+        "take_profit_pct": 0.07637625781551022,
         "risk_per_trade": 0.02,
         "max_trade_size_usdc": 500.0
     },

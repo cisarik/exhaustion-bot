@@ -12,23 +12,25 @@ Obsahuje presné inštrukcie, ako začať projekt alebo ako v ňom plynule pokra
 
 > **Copy & Paste do Chatu:**
 >
-> Si **Senior Python Developer** špecializovaný na Cardano DeFi. Infosec expert. Hacker. Backend magician. Evolution algorithms strategist. Trading expert. Tvojou úlohou je pokračovať vo vývoji projektu **Cardano Exhaustion Bot**.
+> Si **Senior Python Developer** špecializovaný na Cardano DeFi, HFT a Algorithmic Trading.
+> Tvojou úlohou je pokračovať vo vývoji projektu **Cardano Exhaustion Bot**.
 >
 > **Tvoj Prvý Krok (Context Loading):**
 > Skôr než napíšeš riadok kódu, vykonaj túto sekvenciu analýzy prostredia:
-> 1. **Prečítaj Project Mission:** `cat PRD.md` (pochop cieľ: profit, 15m timeframe, paper trading).
-> 2. **Zisti Stav Kódu:** `ls -R` (pozri štruktúru) a `cat requirements.txt`.
-> 3. **Analyzuj Históriu:** Spusti `git log -n 3 --oneline` a `git status`, aby si videl, čo naposledy robil predchádzajúci agent.
-> 4. **Identifikuj Ďalší Krok:** Pozri sa do sekcie "Roadmap" v `PRD.md` a nájdi prvú neodškrtnutú úlohu [ ].
+> 1. **Prečítaj Project Mission:** `cat PRD.md` (pochop cieľ: profit).
+> 2. **Zisti Stav Kódu:** `ls -F` a `cat requirements.txt`. Projekt používa **`uv` package manager**.
+> 3. **Analyzuj Históriu:** `git log -n 3 --oneline`.
+> 4. **Načítaj Ziskovú Stratégiu:** `cat tests/test_profitable_config.py` a `cat config.json`. Toto je tvoja "Golden Reference".
+> 5. **Identifikuj Ďalší Krok:** Pozri sa do sekcie "Roadmap" v `PRD.md` a nájdi prvú neodškrtnutú úlohu.
 >
 > **Tvoje Pravidlá Vývoja (Strict Rules):**
-> *   **Profit First:** Každá zmena v kóde musí smerovať k zisku. Žiadny refactoring pre krásu, len pre funkčnosť a rýchlosť.
-> *   **No Hallucinations:** Používaj len existujúce knižnice (`deltadefi-sdk`, `blockfrost-python`). Nevymýšľaj si API endpointy.
-> *   **Hardening:** SSH beží na RPi. Neměň firewall pravidlá bez vedomia užívateľa.
-> *   **Paper Trading Mode:** Všetky transakcie musia byť zatiaľ simulované (LOG only), pokiaľ `PRD.md` nehovorí inak.
+> *   **Profit First:** Každá zmena musí prejsť regresným testom `uv run python -m unittest tests/test_profitable_config.py`.
+> *   **UV Only:** Na spúšťanie príkazov používaj výhradne `uv run <command>` (napr. `uv run python ...`). Nepoužívaj priamo `python` ani `pip`.
+> *   **No Hallucinations:** Používaj existujúci `delta_defi_client.py` pre WebSocket dáta.
+> *   **Test Driven:** Nová funkcionalita začína vytvorením testu.
 >
 > **Akcia:**
-> Po analýze mi napíš krátke zhrnutie: "Analyzoval som repo. Posledná zmena bola X. Nasledujúci logický krok podľa PRD je Y." A potom čakaj na potvrdenie alebo začni kódovať.
+> Analyzuj repo a napíš zhrnutie: "Stratégia je nastavená na [Timeframe/Params]. Posledný profit test bol [Result]. Nasledujúci krok je [Task]."
 
 ---
 
@@ -37,10 +39,9 @@ Obsahuje presné inštrukcie, ako začať projekt alebo ako v ňom plynule pokra
 
 > **Copy & Paste do Chatu:**
 >
-> Si expert Python developer. Tvoj cieľ: Naprogramuj "HFT Exhaustion Bot" na Raspberry Pi 4 podľa priloženého `PRD.md`.
-> Stack: Python 3.11, DeltaDefi SDK, BlockFrost, SQLite, FastAPI.
+> Si expert Python developer. Tvoj cieľ: Naprogramuj "HFT Exhaustion Bot" na Raspberry Pi 4.
+> Stack: Python 3.11+, uv, SQLite, FastAPI.
 > Stratégia: Exhaustion Signal (Level 3 Reversal).
-> Začni vytvorením základnej štruktúry: `exhaustion_detector.py` a `paper_trader.py`.
 
 ---
 
@@ -48,34 +49,37 @@ Obsahuje presné inštrukcie, ako začať projekt alebo ako v ňom plynule pokra
 
 ### 1. Architektúra Systému
 *   **Core Loop (`paper_trader.py`):**
-    *   Pripája sa na Websocket (BlockFrost/DeltaDefi).
-    *   Drží buffer posledných 50 sviečok (15m).
-    *   Posiela dáta do `ExhaustionDetector`.
-    *   Ak `Detector` vráti `SIGNAL_LEVEL_3`:
-        *   Vypočíta risk (2% kapitálu).
-        *   Vykoná "Virtual Swap".
-        *   Zapíše do DB/Logu.
-*   **Web Dashboard (`dashboard_api.py`):**
-    *   FastAPI backend.
-    *   Číta DB a zobrazuje QR kódy walletu.
-    *   Generuje JSON pre frontend (timeline, profit).
+    *   Beží ako `cardano-bot.service` (Systemd).
+    *   Používa `delta_defi_client.py` pre Async WebSocket data feed (HFT 1m dáta).
+    *   Data processing cez `ExhaustionDetector` + RSI Filter.
+*   **Strategy Lab (`dashboard_api.py`):**
+    *   FastAPI backend na porte 8000.
+    *   Endpoint `/api/backtest/simulate` pre real-time simulácie.
+    *   Frontend `strategy_lab.html` s Lightweight Charts.
 
-### 2. Profit Mathematics (Prečo to funguje?)
-*   **Timeframe:** 15 minút (Sweet spot medzi HFT a šumom).
-*   **Fee Structure:** 0.3% swap fee + ~0.2 ADA tx fee.
-*   **Threshold:** Aby bol obchod ziskový, pohyb ceny musí byť > 0.6% (Break-even).
-*   **Cieľ:** Level 3 Exhaustion štatisticky predikuje pohyb 2-5%.
+### 2. Profit Mathematics (Overená Stratégia)
+Na základe Matrix Search a TDD (November 2025):
+*   **Timeframe:** 1m (HFT Dip Hunting).
+*   **Logika:** Extrémne vyčerpanie (L3=20) + RSI Oversold (<30).
+*   **Risk:** Wide Stops (SL 2.5%) pre prežitie volatility, Big TP (5%).
+*   **Exekúcia:** Limit Orders (predpokladaný 0.1% fee/slippage).
+*   **Výsledok:** Winrate 50%, Profit Factor > 1.5.
 
-### 3. Raspberry Pi Hardening (Referencia)
-Agent, ak musíš generovať inštalačné skripty, drž sa tohto štandardu:
-*   **User:** `pi` (alebo custom), nikdy `root` pre aplikáciu.
-*   **SSH:** Port 22 skrytý za `knockd` sekvenciou. Key-based auth only.
-*   **Service:** Systemd unit file `cardano-bot.service` s `Restart=always`.
+### 3. Tooling & Commands
+*   **Spustenie Bota:** `sudo systemctl start cardano-bot`
+*   **Spustenie Dashboardu:** `./start_dashboard.sh` (používa `uv`)
+*   **Run Tests:** `uv run python -m unittest discover tests`
+*   **Profit Matrix:** `uv run python profit_matrix_tool.py`
 
 ---
 
 ## 📝 Changelog & Context Handover
-*(Agenti, sem zapisujte dôležité zmeny na konci vašej session, aby ďalší agent vedel nadviazať)*
+*(Agenti, sem zapisujte dôležité zmeny na konci vašej session)*
 
-*   **[2025-11-25] Init:** Vytvorené `PRD.md` a `AGENTS.md`. Definovaná stratégia 15m HFT.
-*   **[Next]:** Implementácia `exhaustion_detector.py` podľa Pine Script logiky.
+*   **[2025-11-25] Init:** Vytvorené `PRD.md` a `AGENTS.md`.
+*   **[2025-11-26] HFT & UV Migration:**
+    *   Migrácia celého projektu na **`uv`**.
+    *   Implementácia `Strategy Lab` (UI pre backtesty).
+    *   Nájdená zisková stratégia **"Dip Hunting"** (1m, L3=20, RSI).
+    *   Vytvorený `tests/test_profitable_config.py` ako garancia ziskovosti.
+    *   Bot beží na `deltadefi` Websocket feede.

@@ -301,12 +301,107 @@ async def run_backtest_endpoint():
         logger.error(f"Backtest error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/config/update")
-async def update_config(new_config: dict = Body(...)):
-    global BOT_CONFIG
-    BOT_CONFIG.update(new_config)
-    save_config(BOT_CONFIG)
-    # Reload trader
-    if trader:
-        trader.load_config(CONFIG_FILE)
-    return {"status": "updated"}
+@app.get("/strategy", response_class=HTMLResponse)
+async def strategy_lab(request: Request):
+    return templates.TemplateResponse("strategy_lab.html", {"request": request})
+
+@app.post("/api/backtest/simulate")
+async def simulate_strategy(
+    timeframe: str = Body(...),
+    level1: int = Body(...),
+    level2: int = Body(...),
+    level3: int = Body(...),
+    stop_loss_pct: float = Body(...),
+    take_profit_pct: float = Body(...),
+    fee_pct: float = Body(0.003),
+    use_rsi: bool = Body(False)
+):
+    """
+    Runs a backtest simulation with custom parameters provided by the user.
+    This powers the "Strategy Lab" UI.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from backtest_engine import BacktestEngine
+    from data_loader import DataLoader
+    import pandas as pd
+
+    loop = asyncio.get_event_loop()
+    
+    def _run_sim():
+        # Select data file based on timeframe
+        data_file = ""
+        if timeframe == "1m":
+            data_file = "data/binance_ADAUSDT_1m.csv"
+        elif timeframe == "5m":
+            data_file = "data/binance_ADAUSDT_5m.csv"
+        else:
+            # Fallback to 15m default
+            data_file = "data/kraken_ADAUSDT_15m.csv"
+            
+        if not os.path.exists(data_file):
+            # Try to fetch if missing? Or just return error.
+            # For UI responsiveness, better to return error or fallback.
+            return {"error": f"Data for {timeframe} not found. Please fetch it first."}
+            
+        df = pd.read_csv(data_file)
+        data = df['close'].tolist()
+        
+        engine = BacktestEngine(initial_capital=1000.0)
+        engine.load_data(data)
+        
+        # Apply params
+        engine.detector.level1 = level1
+        engine.detector.level2 = level2
+        engine.detector.level3 = level3
+        # Fixed lookbacks for simplicity in UI, or add inputs later
+        engine.detector.lookback1 = 6
+        engine.detector.lookback2 = 6
+        engine.detector.lookback3 = 6
+        
+        engine.stop_loss_pct = stop_loss_pct / 100.0 # UI sends 1.5 for 1.5%
+        engine.take_profit_pct = take_profit_pct / 100.0
+        engine.fee_pct = fee_pct / 100.0
+        
+        engine.use_rsi_filter = use_rsi
+        engine.rsi_period = 14
+        engine.rsi_oversold = 30
+        engine.rsi_overbought = 70
+        
+        engine.run()
+        metrics = engine.get_metrics()
+        
+        # Prepare candle data for chart
+        # Format: [{ time: timestamp, open: ..., high: ..., low: ..., close: ... }]
+        # We need the full DF for timestamps
+        ohlc_data = []
+        if 'open' in df.columns:
+            # Ensure timestamps are in format expected by Lightweight Charts (seconds)
+            # df['timestamp'] might be datetime objects or strings
+            if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                times = df['timestamp'].astype('int64') // 10**9
+            else:
+                # Fallback if string or other
+                times = pd.to_datetime(df['timestamp']).astype('int64') // 10**9
+                
+            ohlc_data = df.rename(columns={'timestamp': 'time'}).to_dict(orient='records')
+            # Overwrite time with unix timestamp
+            for i, row in enumerate(ohlc_data):
+                row['time'] = times[i]
+        
+        # Attach trades
+        # We need to attach trades to the response
+        
+        return {
+            "metrics": metrics,
+            "equity_curve": curve,
+            "candles": ohlc_data,
+            "trades": engine.trades
+        }
+
+    try:
+        with ThreadPoolExecutor() as pool:
+            result = await loop.run_in_executor(pool, _run_sim)
+        return result
+    except Exception as e:
+        logger.error(f"Simulation Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

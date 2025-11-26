@@ -22,10 +22,26 @@ class BacktestEngine:
         # Reporting
         self.equity_curve: List[float] = []
         
+        # Filters
+        self.use_rsi_filter = False
+        self.rsi_period = 14
+        self.rsi_oversold = 30
+        self.rsi_overbought = 70
+
     def load_data(self, data: List[float]):
         """Load historical close prices."""
         self.data = data
         
+    def calculate_rsi(self, period=14):
+        import pandas as pd
+        if not self.data: return []
+        series = pd.Series(self.data)
+        delta = series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        return (100 - (100 / (1 + rs))).fillna(50).tolist()
+
     def run(self):
         """Run the backtest simulation with SL/TP and Equity Tracking."""
         self.detector.reset_state()
@@ -33,6 +49,11 @@ class BacktestEngine:
         self.balance_usdc = self.capital
         self.balance_ada = 0.0
         self.equity_curve = []
+        
+        # Pre-calculate RSI if needed
+        rsi_data = []
+        if self.use_rsi_filter:
+            rsi_data = self.calculate_rsi(self.rsi_period)
         
         active_position = None # {entry_price, amount_ada, sl, tp}
 
@@ -67,7 +88,16 @@ class BacktestEngine:
             signal = self.detector.update(current_price, history_slice)
             
             # 4. Execute Signals
-            if signal['bull_l3']:
+            # Apply Filters
+            can_long = True
+            can_short = True
+            
+            if self.use_rsi_filter and i < len(rsi_data):
+                current_rsi = rsi_data[i]
+                if current_rsi > self.rsi_oversold: can_long = False
+                if current_rsi < self.rsi_overbought: can_short = False
+            
+            if signal['bull_l3'] and can_long:
                 # Entry Signal (Long)
                 if not active_position:
                     # Position Sizing
@@ -80,7 +110,7 @@ class BacktestEngine:
                     self._close_position(active_position, current_price, 'SIGNAL_BULL_L3')
                     active_position = None
             
-            elif signal['bear_l3']:
+            elif signal['bear_l3'] and can_short:
                 # Entry Signal (Short) OR Exit Long
                 if active_position:
                     if active_position['type'] == 'LONG':
@@ -185,7 +215,8 @@ class BacktestEngine:
             'entry_price': pos['entry_price'],
             'exit_price': exit_price,
             'pnl': pnl_net,
-            'pnl_pct': (pnl_net / (pos['entry_price'] * pos['amount_ada'])) * 100
+            'pnl_pct': (pnl_net / (pos['entry_price'] * pos['amount_ada'])) * 100,
+            'index': i if 'i' in locals() else -1 # Capture index if available
         })
         
     # Need to fix _open_position side effect on balance

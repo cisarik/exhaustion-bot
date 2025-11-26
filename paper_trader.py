@@ -5,6 +5,9 @@ import os
 import json
 from datetime import datetime
 from typing import List, Dict
+import ccxt.async_support as ccxt
+from blockfrost import BlockFrostApi, ApiError
+from delta_defi_client import DeltaDefiClient
 from exhaustion_detector import ExhaustionDetector
 from wallet_manager import WalletManager
 from profit_manager import ProfitManager
@@ -43,14 +46,11 @@ class PaperTrader:
         self.safety = SafetyMonitor(max_trade_size_usdc=self.config['risk'].get('max_trade_size_usdc', 500.0))
         self.wallet_manager = WalletManager() # Loads existing or new
         
-        # Initialize Profit Manager (for logic, even if simulated)
-        # Assuming we want to withdraw if profit > 100 ADA (example)
-        # In paper mode, we won't actually withdraw but we'll log it.
         self.profit_manager = ProfitManager(
             wallet_manager=self.wallet_manager,
-            profit_target_ada=100.0, # Configurable?
-            reserve_ada=10.0, # Reserve for fees
-            user_address="addr_test1..." # Should come from user input/config
+            profit_target_ada=100.0, 
+            reserve_ada=10.0,
+            user_address="addr_test1..."
         )
         
         self.closes: List[float] = []
@@ -63,6 +63,16 @@ class PaperTrader:
         self.fee_pct = 0.003 
         self.slippage_pct = 0.005
         self.paper_mode = self.config['system']['paper_mode']
+        self.exchange_id = self.config['system'].get('exchange', 'kraken')
+        self.symbol = self.config['system'].get('symbol', 'ADA/USD') # Kraken uses ADA/USD
+        
+        # BlockFrost Init
+        self.bf_project_id = os.getenv('BLOCKFROST_PROJECT_ID')
+        if self.bf_project_id:
+            self.bf = BlockFrostApi(project_id=self.bf_project_id)
+        else:
+            logger.warning("BLOCKFROST_PROJECT_ID not set. BlockFrost features disabled.")
+            self.bf = None
 
     def load_config(self, path: str):
         try:
@@ -74,68 +84,148 @@ class PaperTrader:
             self.config = {
                 "strategy": {"level1": 9, "level2": 12, "level3": 14},
                 "risk": {"stop_loss_pct": 0.012, "take_profit_pct": 0.03, "risk_per_trade": 0.02},
-                "system": {"paper_mode": True}
+                "system": {"paper_mode": True, "exchange": "kraken", "symbol": "ADA/USD"}
             }
             
-        # Re-apply settings if components exist
         if hasattr(self, 'detector'):
             strategy = self.config.get('strategy', {})
             self.detector.level1 = strategy.get('level1', 9)
             self.detector.level2 = strategy.get('level2', 12)
             self.detector.level3 = strategy.get('level3', 14)
-            self.detector.lookback1 = strategy.get('lookback1', 4)
-            self.detector.lookback2 = strategy.get('lookback2', 3)
-            self.detector.lookback3 = strategy.get('lookback3', 2)
             
         if hasattr(self, 'safety'):
             self.risk_per_trade = self.config.get('risk', {}).get('risk_per_trade', 0.02)
             self.stop_loss_pct = self.config.get('risk', {}).get('stop_loss_pct', 0.012)
             self.take_profit_pct = self.config.get('risk', {}).get('take_profit_pct', 0.03)
-            self.paper_mode = self.config.get('system', {}).get('paper_mode', True)
 
     async def start(self):
         logger.info(f"Starting Paper Trader. Mode: {'PAPER' if self.paper_mode else 'LIVE'}")
         logger.info(f"Capital: ${self.capital_usdc:.2f}")
         
+        # Verify BlockFrost connection if available
+        if self.bf:
+            try:
+                health = self.bf.health()
+                logger.info(f"BlockFrost Health: {health.is_healthy}")
+            except Exception as e:
+                logger.error(f"BlockFrost Connection Failed: {e}")
+
         if self.paper_mode:
-             await self.simulate_websocket_loop()
+             await self.run_live_feed()
         else:
-             # Real websocket connection would go here
+             # Real trading loop implementation pending
              pass
 
-    async def simulate_websocket_loop(self):
-        """Simulates receiving price updates and forming candles."""
-        logger.info("Connecting to (Simulated) DeltaDefi Websocket...")
+    async def run_live_feed(self):
+        """Fetches real market data. Supports CCXT (Kraken) or DeltaDefi WS."""
+        if self.exchange_id == 'deltadefi':
+            await self.run_deltadefi_feed()
+        else:
+            await self.run_ccxt_feed()
+
+    async def run_deltadefi_feed(self):
+        """Connects to DeltaDefi WebSocket for HFT data."""
+        logger.info("Initializing DeltaDefi WebSocket Client...")
+        client = DeltaDefiClient(api_key=os.getenv("DELTADEFI_API_KEY"))
         
-        current_price = 1.0 # Start at 1.0 for simplicity
-        
-        while True:
-            # Check Circuit Breaker
-            if not self.safety.can_trade():
-                logger.critical("TRADING HALTED BY SAFETY MONITOR.")
-                break
+        try:
+            await client.connect()
+            
+            # Subscribe to candles (Assuming standard topic format)
+            # NOTE: Topic names should be verified with API docs
+            await client.subscribe("candles", {"symbol": self.symbol, "interval": "1m"})
+            
+            async def on_message(msg):
+                # Parse message based on assumed format
+                # { "type": "candle", "data": { "c": 1.23, "t": 123456... } }
+                try:
+                    if msg.get("type") == "candle" or "c" in msg:
+                        data = msg.get("data", msg)
+                        close = float(data.get("c") or data.get("close"))
+                        # is_closed = data.get("x") # Optional: check if candle closed
+                        
+                        # For 1m scalping, we might process every tick or every closed candle
+                        self.process_candle(close, is_warmup=False)
+                        self.check_positions(close)
+                        
+                except Exception as e:
+                    logger.error(f"WS Parse Error: {e}")
+
+            client.on_message(on_message)
+            
+            # Keep alive loop
+            while True:
+                if not self.safety.can_trade():
+                    logger.critical("TRADING HALTED.")
+                    await client.close()
+                    break
+                await asyncio.sleep(1)
                 
-            # Simulate Candle (Random Walk)
-            change = random.uniform(-0.01, 0.01) # Smaller volatility
-            current_price *= (1 + change)
-            
-            self.process_candle(current_price)
-            self.check_positions(current_price)
-            
-            # Check Profit Target (Simulated)
-            # Convert total value to ADA to check against profit target in ADA
-            total_equity_usdc = self.balance_usdc + (self.balance_ada * current_price)
-            # implied profit in ADA = (Equity - Initial) / Price? 
-            # Or just check accumulated profit?
-            # Let's just log equity for now.
-            
-            if len(self.positions) > 0 or abs(change) > 0.005:
-                 # Log status periodically or on activity
-                 pass
+        except Exception as e:
+            logger.error(f"DeltaDefi WS Error: {e}")
+        finally:
+            await client.close()
 
-            await asyncio.sleep(1) 
+    async def run_ccxt_feed(self):
+        """Fetches real market data from CCXT (Kraken) and simulates trading."""
+        logger.info(f"Connecting to {self.exchange_id} for market data...")
+        
+        exchange_class = getattr(ccxt, self.exchange_id)
+        exchange = exchange_class()
+        
+        try:
+            # Initial History Fetch
+            logger.info("Fetching historical candles...")
+            ohlcv = await exchange.fetch_ohlcv(self.symbol, '1m' if self.exchange_id == 'deltadefi' else '15m', limit=100)
+            if ohlcv:
+                for candle in ohlcv:
+                    self.process_candle(candle[4], is_warmup=True) # Close price
+                logger.info(f"Loaded {len(ohlcv)} historical candles.")
+            
+            logger.info("Starting live polling loop...")
+            while True:
+                # Check Circuit Breaker
+                if not self.safety.can_trade():
+                    logger.critical("TRADING HALTED BY SAFETY MONITOR.")
+                    break
+                
+                try:
+                    # Fetch latest candle
+                    # We poll every minute to check for price updates or completed 15m candles
+                    # For simplicity, we'll just get the last closed candle
+                    ticker = await exchange.fetch_ticker(self.symbol)
+                    current_price = ticker['last']
+                    
+                    # Check existing positions against current price (Real-time check)
+                    self.check_positions(current_price)
+                    
+                    # Update candles logic
+                    # We need to know if a new candle has closed.
+                    timeframe = '1m' if self.exchange_id == 'deltadefi' else '15m'
+                    recent_candles = await exchange.fetch_ohlcv(self.symbol, timeframe, limit=2)
+                    last_closed_candle = recent_candles[-2] # -1 is likely current open candle
+                    last_closed_close = last_closed_candle[4]
+                    
+                    # If we haven't processed this candle timestamp yet...
+                    # (Need to track last processed timestamp)
+                    # For now, simplified: just process the last closed price if it changed/new?
+                    # Better: track timestamps.
+                    
+                    current_ts = last_closed_candle[0]
+                    if not hasattr(self, 'last_processed_ts') or current_ts > self.last_processed_ts:
+                        self.last_processed_ts = current_ts
+                        self.process_candle(last_closed_close)
+                        logger.info(f"New 15m Candle Closed: {last_closed_close}")
+                    
+                except Exception as e:
+                    logger.error(f"Error in data loop: {e}")
+                
+                await asyncio.sleep(60) # Poll every minute
 
-    def process_candle(self, close_price: float):
+        finally:
+            await exchange.close() 
+
+    def process_candle(self, close_price: float, is_warmup: bool = False):
         self.closes.append(close_price)
         # Max lookback needed is around 20-30 for detector state? 
         # No, detector is stateful but detect_signal re-runs history.
@@ -146,6 +236,9 @@ class PaperTrader:
         # Run Detection
         signal = self.detector.detect_signal(self.closes)
         
+        if is_warmup:
+            return
+
         if signal['bull_l3']:
             self.execute_trade('BUY', close_price, signal)
         elif signal['bear_l3']:

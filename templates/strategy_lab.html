@@ -1,0 +1,245 @@
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
+
+    <!-- Navbar -->
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold text-blue-400">🧪 Strategy Lab</h1>
+            <a href="/" class="text-gray-400 hover:text-white text-sm">← Back to Dashboard</a>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8">
+        
+        <!-- Sidebar: Controls -->
+        <div class="w-full lg:w-1/4 bg-gray-800 rounded-lg p-6 border border-gray-700 h-fit">
+            <h2 class="text-lg font-semibold mb-4 text-white">Configuration</h2>
+            
+            <form id="simForm" onsubmit="runSimulation(event)">
+                <!-- Timeframe -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-400 mb-1">Timeframe</label>
+                    <select id="timeframe" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white">
+                        <option value="1m">1 Minute (HFT)</option>
+                        <option value="5m">5 Minutes</option>
+                        <option value="15m">15 Minutes</option>
+                    </select>
+                </div>
+
+                <!-- Exhaustion Levels -->
+                <div class="grid grid-cols-3 gap-2 mb-4">
+                    <div>
+                        <label class="block text-xs text-gray-400">Level 1</label>
+                        <input type="number" id="level1" value="9" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400">Level 2</label>
+                        <input type="number" id="level2" value="14" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400">Level 3</label>
+                        <input type="number" id="level3" value="20" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white text-sm">
+                    </div>
+                </div>
+
+                <!-- Risk Management -->
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Stop Loss (%)</label>
+                        <input type="number" id="sl" value="2.5" step="0.1" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-1">Take Profit (%)</label>
+                        <input type="number" id="tp" value="5.0" step="0.1" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white">
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="mb-6">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="rsi" checked class="w-4 h-4 bg-gray-700 border-gray-600 rounded text-blue-500">
+                        <span class="text-sm text-gray-300">Use RSI Filter (30/70)</span>
+                    </label>
+                </div>
+
+                <!-- Fee Override -->
+                <div class="mb-6">
+                     <label class="block text-sm font-medium text-gray-400 mb-1">Fee (%)</label>
+                     <input type="number" id="fee" value="0.1" step="0.01" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white">
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded transition-colors flex justify-center items-center gap-2">
+                    <span>▶ Run Simulation</span>
+                    <div id="loading" class="hidden animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                </button>
+            </form>
+        </div>
+
+        <!-- Main Content: Results -->
+        <div class="w-full lg:w-3/4 flex flex-col gap-6">
+            
+            <!-- Metrics Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                    <p class="text-gray-400 text-xs uppercase">Total Profit</p>
+                    <p id="resProfit" class="text-2xl font-bold text-gray-500">--</p>
+                </div>
+                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                    <p class="text-gray-400 text-xs uppercase">Trades</p>
+                    <p id="resTrades" class="text-2xl font-bold text-white">--</p>
+                </div>
+                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                    <p class="text-gray-400 text-xs uppercase">Win Rate</p>
+                    <p id="resWinRate" class="text-2xl font-bold text-white">--</p>
+                </div>
+                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                    <p class="text-gray-400 text-xs uppercase">Drawdown</p>
+                    <p id="resDD" class="text-2xl font-bold text-red-400">--</p>
+                </div>
+            </div>
+
+            <!-- Chart Container -->
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 flex-grow flex flex-col h-[600px]">
+                <h3 class="text-sm font-semibold text-gray-400 mb-2">Candlestick Analysis</h3>
+                <div id="chart" class="w-full h-full bg-gray-900 rounded"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+        let candleSeries = null;
+        let markerSeries = null;
+
+        // Initialize Chart
+        function initChart() {
+            const container = document.getElementById('chart');
+            chart = LightweightCharts.createChart(container, {
+                layout: {
+                    background: { color: '#111827' },
+                    textColor: '#9ca3af',
+                },
+                grid: {
+                    vertLines: { color: '#1f2937' },
+                    horzLines: { color: '#1f2937' },
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#22c55e',
+                downColor: '#ef4444',
+                borderVisible: false,
+                wickUpColor: '#22c55e',
+                wickDownColor: '#ef4444',
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initChart);
+
+        async function runSimulation(e) {
+            e.preventDefault();
+            const btn = document.querySelector('button[type="submit"]');
+            const loading = document.getElementById('loading');
+            
+            // UI Loading State
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            loading.classList.remove('hidden');
+
+            const payload = {
+                timeframe: document.getElementById('timeframe').value,
+                level1: parseInt(document.getElementById('level1').value),
+                level2: parseInt(document.getElementById('level2').value),
+                level3: parseInt(document.getElementById('level3').value),
+                stop_loss_pct: parseFloat(document.getElementById('sl').value),
+                take_profit_pct: parseFloat(document.getElementById('tp').value),
+                fee_pct: parseFloat(document.getElementById('fee').value),
+                use_rsi: document.getElementById('rsi').checked
+            };
+
+            try {
+                const response = await fetch('/api/backtest/simulate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if(data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                updateUI(data);
+
+            } catch (err) {
+                alert("Simulation failed: " + err);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                loading.classList.add('hidden');
+            }
+        }
+
+        function updateUI(data) {
+            const m = data.metrics;
+            
+            // Update Cards
+            const profitEl = document.getElementById('resProfit');
+            profitEl.textContent = `$${m.total_pnl.toFixed(2)}`;
+            profitEl.className = `text-2xl font-bold ${m.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
+            
+            document.getElementById('resTrades').textContent = m.total_trades;
+            document.getElementById('resWinRate').textContent = `${m.win_rate}%`;
+            document.getElementById('resDD').textContent = `${m.max_drawdown}%`;
+
+            // Update Candle Chart
+            if (data.candles && data.candles.length > 0) {
+                candleSeries.setData(data.candles);
+                
+                // Add Markers
+                const markers = [];
+                
+                // Process trades to find entry/exit points
+                // engine.trades has entry_index and exit_index
+                // map index to time from candles
+                
+                if (data.trades) {
+                    data.trades.forEach(trade => {
+                        const entryTime = data.candles[trade.entry_index]?.time;
+                        const exitTime = data.candles[trade.exit_index]?.time;
+                        
+                        if (entryTime) {
+                            markers.push({
+                                time: entryTime,
+                                position: 'belowBar',
+                                color: '#eab308',
+                                shape: 'arrowUp',
+                                text: trade.type.includes('LONG') ? 'LONG' : 'SHORT'
+                            });
+                        }
+                        if (exitTime) {
+                            markers.push({
+                                time: exitTime,
+                                position: 'aboveBar',
+                                color: trade.pnl > 0 ? '#22c55e' : '#ef4444',
+                                shape: 'arrowDown',
+                                text: `EXIT ($${trade.pnl.toFixed(2)})`
+                            });
+                        }
+                    });
+                }
+                
+                candleSeries.setMarkers(markers);
+                chart.timeScale().fitContent();
+            }
+        }
+    </script>
+</body>
+</html>
