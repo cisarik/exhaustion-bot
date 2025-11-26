@@ -24,3 +24,6 @@ wallet_*.png
 # We will keep config.json as default strategy template, but ignore backups
 backup_*.key
 temp_restore_*
+.PYNECORE.md.kate-swp
+
+data/

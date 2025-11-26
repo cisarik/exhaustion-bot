@@ -10,13 +10,13 @@
         "rsi_period": 14,
         "rsi_oversold": 30,
         "rsi_overbought": 70,
-        "use_fib_exit": true,
+        "use_fib_exit": false,
         "fib_level": 0.5
     },
     "risk": {
         "stop_loss_pct": 0.025,
-        "take_profit_pct": 0.10,
-        "risk_per_trade": 0.02,
+        "take_profit_pct": 0.05,
+        "risk_per_trade": 0.05,
         "max_trade_size_usdc": 500.0
     },
     "system": {

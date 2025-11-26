@@ -5,7 +5,7 @@ class BacktestEngine:
     def __init__(self, initial_capital: float = 1000.0):
         self.capital = initial_capital
         self.balance_usdc = initial_capital
-        self.balance_ada = 0.0
+        self.balance_ada = 0.0  # Only used for LONG tracking; shorts are margin-style
         self.trades: List[Dict] = []
         self.data: List[float] = []
         self.detector = ExhaustionDetector()
@@ -102,7 +102,12 @@ class BacktestEngine:
             # 1. Update Equity Curve
             current_equity = self.balance_usdc
             if active_position:
-                current_equity += active_position['amount_ada'] * current_price
+                if active_position['type'] == 'LONG':
+                    current_equity += active_position['amount_ada'] * current_price
+                else:
+                    # For shorts, equity = free balance + margin + unrealized PnL
+                    current_equity += active_position['capital_used']
+                    current_equity += (active_position['entry_price'] - current_price) * active_position['amount_ada']
             self.equity_curve.append(current_equity)
             
             # 2. Manage Active Position (SL/TP/Fib)
@@ -152,10 +157,12 @@ class BacktestEngine:
             if signal['bull_l3'] and can_long:
                 # Entry Signal (Long)
                 if not active_position:
-                    # Position Sizing
-                    trade_amt = current_equity * self.risk_per_trade
-                    if trade_amt > 5:
-                         active_position = self._open_position('LONG', current_price, trade_amt, i)
+                    # Position Sizing (risk from available cash)
+                    trade_amt = self.balance_usdc * self.risk_per_trade
+                    if trade_amt > 5 and trade_amt <= self.balance_usdc:
+                         opened = self._open_position('LONG', current_price, trade_amt, i)
+                         if opened:
+                             active_position = opened
                          
                          # Calculate Fib Target if enabled
                          if self.use_fib_exit:
@@ -227,13 +234,19 @@ class BacktestEngine:
                         active_position = None
                 else:
                     # Open Short
-                    trade_amt = current_equity * self.risk_per_trade
-                    if trade_amt > 5:
-                        active_position = self._open_position('SHORT', current_price, trade_amt, i)
+                    trade_amt = self.balance_usdc * self.risk_per_trade
+                    if trade_amt > 5 and trade_amt <= self.balance_usdc:
+                        opened = self._open_position('SHORT', current_price, trade_amt, i)
+                        if opened:
+                            active_position = opened
 
     def _open_position(self, side: str, price: float, usdc_amount: float, index=-1):
         # Fee is paid on notional value
         fee = usdc_amount * self.fee_pct
+
+        # Capital check (simple: ensure we have the cash to deploy)
+        if usdc_amount > self.balance_usdc:
+            return None
         
         # For LONG: We buy ADA. Cost = usdc_amount.
         # For SHORT: We sell ADA. Margin = usdc_amount.
@@ -251,13 +264,17 @@ class BacktestEngine:
             sl = entry_price * (1 + self.stop_loss_pct) # SL is higher for short
             tp = entry_price * (1 - self.take_profit_pct) # TP is lower for short
 
+        # Deduct deployed capital from cash balance (margin for shorts too)
+        self.balance_usdc -= usdc_amount
+
         return {
             'type': side,
             'entry_price': entry_price,
             'amount_ada': amount_ada,
             'sl': sl,
             'tp': tp,
-            'entry_index': index
+            'entry_index': index,
+            'capital_used': usdc_amount
         }
 
     def _close_position(self, pos, price, reason, index=-1):
@@ -278,9 +295,10 @@ class BacktestEngine:
         exit_fee = notional_value * self.fee_pct
         
         pnl_net = pnl_raw - exit_fee
-        
-        # Update Balance
-        self.balance_usdc += pnl_net # We only track PnL impact on balance for simplicity in this engine
+
+        # Update Balance: return deployed capital + profit/loss
+        self.balance_usdc += pos.get('capital_used', 0)
+        self.balance_usdc += pnl_net # profit or loss on top of capital
         
         self.trades.append({
             'type': f"{pos['type']}_CLOSE",
